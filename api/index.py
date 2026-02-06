@@ -1,31 +1,27 @@
 """
-Image Convert MCP Server
+Image Convert API for Vercel
 
-A Model Context Protocol server for converting images to WebP and AVIF formats
-with support for both single file and batch directory processing.
+A REST API wrapper for image conversion tools, optimized for Vercel's serverless platform.
 """
 
-import asyncio
 import logging
-import argparse
 from pathlib import Path
 from typing import Any, Optional
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from PIL import Image
 import pillow_avif  # noqa: F401
 
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
-from mcp.server.sse import SseServerTransport
-from mcp.types import Tool, TextContent
 from starlette.applications import Starlette
 from starlette.routing import Route
-import uvicorn
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
 
 # Configuration
 SUPPORTED_EXTS = {".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".webp"}
-MAX_FILE_SIZE_MB = 100  # Maximum file size in MB
-MAX_DIMENSION = 10000  # Maximum width or height
+MAX_FILE_SIZE_MB = 100
+MAX_DIMENSION = 10000
 
 # Setup logging
 logging.basicConfig(
@@ -96,7 +92,6 @@ def validate_params(arguments: dict[str, Any]) -> None:
     if not 1 <= avif_quality <= 100:
         raise ValidationError(f"avif_quality must be 1-100, got {avif_quality}")
     
-    # Mode validation
     mode = arguments.get("mode")
     if mode and mode not in ("single", "batch"):
         raise ValidationError(f"Invalid mode: {mode}")
@@ -183,120 +178,140 @@ def convert_batch_parallel(input_dir: Path, workers: Optional[int], **kwargs: An
     return results
 
 
-# Initialize MCP server
-mcp_app = Server("image-convert-mcp")
+# --- REST API Endpoints ---
 
-
-@mcp_app.list_tools()
-async def list_tools() -> list[Tool]:
-    return [
-        Tool(
-            name="convert_image_single",
-            description="Convert a single image to WebP and/or AVIF format",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "input_path": {"type": "string"},
-                    "output_dir": {"type": "string"},
-                    "format": {"type": "string", "enum": ["webp", "avif", "both"]},
-                    "webp_quality": {"type": "integer", "minimum": 1, "maximum": 100},
-                    "avif_quality": {"type": "integer", "minimum": 1, "maximum": 100},
-                    "lossless": {"type": "boolean"},
-                    "max_width": {"type": "integer"},
-                    "max_height": {"type": "integer"}
-                },
-                "required": ["input_path"]
+async def list_tools_endpoint(request: Request):
+    """List available conversion tools."""
+    tools = [
+        {
+            "name": "convert_image_single",
+            "description": "Convert a single image to WebP and/or AVIF format",
+            "endpoint": "/api/convert/single",
+            "method": "POST",
+            "parameters": {
+                "input_path": "string (required)",
+                "output_dir": "string (optional)",
+                "format": "webp|avif|both (optional, default: both)",
+                "webp_quality": "integer 1-100 (optional, default: 80)",
+                "avif_quality": "integer 1-100 (optional, default: 50)",
+                "lossless": "boolean (optional, default: false)",
+                "max_width": "integer (optional)",
+                "max_height": "integer (optional)"
             }
-        ),
-        Tool(
-            name="convert_image_batch",
-            description="Convert multiple images in a directory",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "input_path": {"type": "string"},
-                    "output_dir": {"type": "string"},
-                    "format": {"type": "string", "enum": ["webp", "avif", "both"]},
-                    "workers": {"type": "integer"}
-                },
-                "required": ["input_path"]
+        },
+        {
+            "name": "convert_image_batch",
+            "description": "Convert multiple images in a directory",
+            "endpoint": "/api/convert/batch",
+            "method": "POST",
+            "parameters": {
+                "input_path": "string (required, directory path)",
+                "output_dir": "string (optional)",
+                "format": "webp|avif|both (optional, default: both)",
+                "workers": "integer (optional)"
             }
-        )
+        }
     ]
+    return JSONResponse({"tools": tools, "status": "success"})
 
 
-@mcp_app.call_tool()
-async def call_tool(name: str, arguments: Any) -> list[TextContent]:
+async def convert_single_endpoint(request: Request):
+    """Convert a single image."""
     try:
-        validate_params(arguments)
-        input_path = validate_path(Path(arguments["input_path"]), must_exist=True)
-        output_dir = Path(arguments.get("output_dir", input_path.parent))
+        data = await request.json()
+        validate_params(data)
+        
+        input_path = validate_path(Path(data["input_path"]), must_exist=True)
+        output_dir = Path(data.get("output_dir", input_path.parent))
         output_dir = validate_path(output_dir, must_exist=False)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        common_args = {
-            "output_dir": output_dir,
-            "format": arguments.get("format", "both"),
-            "webp_quality": int(arguments.get("webp_quality", 80)),
-            "avif_quality": int(arguments.get("avif_quality", 50)),
-            "lossless": bool(arguments.get("lossless", False)),
-            "max_width": arguments.get("max_width"),
-            "max_height": arguments.get("max_height"),
-        }
+        if not input_path.is_file():
+            raise ValidationError("Single mode requires a file path")
 
-        if name == "convert_image_batch":
-            if not input_path.is_dir(): raise ValidationError("Batch mode requires directory")
-            result = await asyncio.to_thread(convert_batch_parallel, input_dir=input_path, workers=arguments.get("workers"), **common_args)
-            return [TextContent(type="text", text=f"Batch conversion complete: {result}")]
-        elif name == "convert_image_single":
-            if not input_path.is_file(): raise ValidationError("Single mode requires file")
-            result = await asyncio.to_thread(convert_one, image_path=input_path, **common_args)
-            return [TextContent(type="text", text=f"Image conversion successful: {result}")]
-        raise ValueError(f"Unknown tool: {name}")
+        result = convert_one(
+            image_path=input_path,
+            output_dir=output_dir,
+            format=data.get("format", "both"),
+            webp_quality=int(data.get("webp_quality", 80)),
+            avif_quality=int(data.get("avif_quality", 50)),
+            lossless=bool(data.get("lossless", False)),
+            max_width=data.get("max_width"),
+            max_height=data.get("max_height"),
+        )
+        
+        return JSONResponse({"result": result, "status": "success"})
+    except (ValidationError, ImageConversionError) as e:
+        return JSONResponse({"error": str(e), "status": "error"}, status_code=400)
     except Exception as e:
-        return [TextContent(type="text", text=f"❌ Error: {str(e)}")]
+        logger.error(f"Unexpected error: {e}")
+        return JSONResponse({"error": "Internal server error", "status": "error"}, status_code=500)
 
 
-# --- Web Server Setup (for SSE/Vercel) ---
+async def convert_batch_endpoint(request: Request):
+    """Convert multiple images in a directory."""
+    try:
+        data = await request.json()
+        validate_params(data)
+        
+        input_path = validate_path(Path(data["input_path"]), must_exist=True)
+        output_dir = Path(data.get("output_dir", input_path))
+        output_dir = validate_path(output_dir, must_exist=False)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-sse = SseServerTransport(endpoint="/mcp")
+        if not input_path.is_dir():
+            raise ValidationError("Batch mode requires a directory path")
 
-async def handle_mcp(request):
-    async with sse.connect_sse(request.scope, request.receive, request._send) as (r, w):
-        await mcp_app.run(r, w, mcp_app.create_initialization_options())
+        results = convert_batch_parallel(
+            input_dir=input_path,
+            workers=data.get("workers"),
+            output_dir=output_dir,
+            format=data.get("format", "both"),
+            webp_quality=int(data.get("webp_quality", 80)),
+            avif_quality=int(data.get("avif_quality", 50)),
+            lossless=bool(data.get("lossless", False)),
+            max_width=data.get("max_width"),
+            max_height=data.get("max_height"),
+        )
+        
+        return JSONResponse({"results": results, "status": "success"})
+    except (ValidationError, ImageConversionError) as e:
+        return JSONResponse({"error": str(e), "status": "error"}, status_code=400)
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        return JSONResponse({"error": "Internal server error", "status": "error"}, status_code=500)
 
-async def handle_messages(request):
-    await sse.handle_post_message(request.scope, request.receive, request._send)
 
-# Global app for Vercel/Starlette
+async def homepage(request: Request):
+    """API homepage with documentation."""
+    return JSONResponse({
+        "name": "Image Convert API",
+        "version": "1.0.0",
+        "description": "REST API for converting images to WebP and AVIF formats",
+        "endpoints": {
+            "GET /": "This documentation",
+            "GET /api/tools": "List available tools",
+            "POST /api/convert/single": "Convert a single image",
+            "POST /api/convert/batch": "Convert multiple images"
+        },
+        "documentation": "https://github.com/ShanthiStream/image-convert-mcp"
+    })
+
+
+# Create Starlette app with CORS
+middleware = [
+    Middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+]
+
 app = Starlette(
     routes=[
-        Route("/mcp", endpoint=handle_mcp, methods=["GET"]),
-        Route("/messages", endpoint=handle_messages, methods=["POST"]),
-    ]
+        Route("/", endpoint=homepage, methods=["GET"]),
+        Route("/api/tools", endpoint=list_tools_endpoint, methods=["GET"]),
+        Route("/api/convert/single", endpoint=convert_single_endpoint, methods=["POST"]),
+        Route("/api/convert/batch", endpoint=convert_batch_endpoint, methods=["POST"]),
+    ],
+    middleware=middleware
 )
 
-# Alias for compatibility if needed
+# Vercel handler
 handler = app
-
-async def run_stdio():
-    async with stdio_server() as (r, w):
-        await mcp_app.run(r, w, mcp_app.create_initialization_options())
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--transport", choices=["stdio", "sse"], default="stdio")
-    parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=8000)
-    args = parser.parse_args()
-
-    if args.transport == "stdio":
-        asyncio.run(run_stdio())
-    else:
-        logger.info(f"Starting SSE server on {args.host}:{args.port}...")
-        uvicorn.run(app, host=args.host, port=args.port)
-
-
-if __name__ == "__main__":
-    main()
