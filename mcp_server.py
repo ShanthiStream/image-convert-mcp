@@ -7,13 +7,10 @@ with support for both single file and batch directory processing.
 
 import asyncio
 import logging
-from pathlib import Path
-from typing import Any, Optional
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from PIL import Image
-import pillow_avif  # noqa: F401
-
 import argparse
+from pathlib import Path
+from typing import Any
+
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.server.sse import SseServerTransport
@@ -22,10 +19,14 @@ from starlette.applications import Starlette
 from starlette.routing import Route
 import uvicorn
 
-# Configuration
-SUPPORTED_EXTS = {".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".webp"}
-MAX_FILE_SIZE_MB = 100  # Maximum file size in MB
-MAX_DIMENSION = 10000  # Maximum width or height
+# Import from src package
+from src import (
+    convert_one,
+    convert_batch_parallel,
+    validate_path,
+    validate_params,
+    ValidationError,
+)
 
 # Setup logging
 logging.basicConfig(
@@ -34,155 +35,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
-class ImageConversionError(Exception):
-    """Custom exception for image conversion errors"""
-    pass
-
-
-class ValidationError(Exception):
-    """Custom exception for input validation errors"""
-    pass
-
-
-def validate_path(path: Path, must_exist: bool = True) -> Path:
-    """Validate and sanitize file paths."""
-    try:
-        abs_path = path.resolve()
-        if must_exist and not abs_path.exists():
-            raise ValidationError(f"Path does not exist: {path}")
-        return abs_path
-    except Exception as e:
-        raise ValidationError(f"Invalid path: {path} - {str(e)}")
-
-
-def validate_file_size(path: Path, max_size_mb: int = MAX_FILE_SIZE_MB) -> None:
-    """Validate file size."""
-    file_size_mb = path.stat().st_size / (1024 * 1024)
-    if file_size_mb > max_size_mb:
-        raise ValidationError(
-            f"File too large: {file_size_mb:.2f}MB (max: {max_size_mb}MB)"
-        )
-
-
-def validate_image_dimensions(img: Image.Image) -> None:
-    """Validate image dimensions."""
-    width, height = img.size
-    if width > MAX_DIMENSION or height > MAX_DIMENSION:
-        raise ValidationError(
-            f"Image dimensions too large: {width}x{height} (max: {MAX_DIMENSION})"
-        )
-
-
-def validate_params(arguments: dict[str, Any]) -> None:
-    """Validate tool parameters."""
-    if "input_path" not in arguments:
-        raise ValidationError("Missing required parameter: input_path")
-        
-    format_type = arguments.get("format", "both")
-    if format_type not in ("webp", "avif", "both"):
-        raise ValidationError(f"Invalid format: {format_type}")
-        
-    webp_quality = arguments.get("webp_quality", 80)
-    avif_quality = arguments.get("avif_quality", 50)
-    
-    if not 1 <= webp_quality <= 100:
-        raise ValidationError(f"webp_quality must be 1-100, got {webp_quality}")
-    if not 1 <= avif_quality <= 100:
-        raise ValidationError(f"avif_quality must be 1-100, got {avif_quality}")
-    
-    mode = arguments.get("mode")
-    if mode and mode not in ("single", "batch"):
-        raise ValidationError(f"Invalid mode: {mode}")
-
-
-def load_image(path: Path) -> Image.Image:
-    """Load and validate image."""
-    try:
-        logger.info(f"Loading image: {path}")
-        validate_file_size(path)
-        img = Image.open(path).convert("RGBA")
-        validate_image_dimensions(img)
-        return img
-    except ValidationError:
-        raise
-    except Exception as e:
-        raise ImageConversionError(f"Failed to load image {path}: {str(e)}")
-
-
-def resize_if_needed(
-    img: Image.Image,
-    max_width: Optional[int],
-    max_height: Optional[int]
-) -> Image.Image:
-    """Resize image."""
-    if max_width or max_height:
-        original_size = img.size
-        img.thumbnail(
-            (max_width or img.width, max_height or img.height),
-            Image.LANCZOS,
-        )
-        new_size = img.size
-        if original_size != new_size:
-            logger.info(f"Resized image from {original_size} to {new_size}")
-    return img
-
-
-def convert_one(
-    image_path: Path,
-    output_dir: Path,
-    format: str,
-    webp_quality: int,
-    avif_quality: int,
-    lossless: bool,
-    max_width: Optional[int],
-    max_height: Optional[int],
-) -> dict[str, str]:
-    """Convert one image."""
-    try:
-        img = load_image(image_path)
-        img = resize_if_needed(img, max_width, max_height)
-        results: dict[str, str] = {"input": str(image_path)}
-        name = image_path.stem
-
-        if format in ("webp", "both"):
-            webp_path = output_dir / f"{name}.webp"
-            img.save(webp_path, "WEBP", quality=webp_quality, lossless=lossless, method=6)
-            results["webp"] = str(webp_path)
-
-        if format in ("avif", "both"):
-            avif_path = output_dir / f"{name}.avif"
-            img.save(avif_path, "AVIF", quality=avif_quality, speed=4)
-            results["avif"] = str(avif_path)
-
-        return results
-    except Exception as e:
-        raise ImageConversionError(f"Conversion failed for {image_path}: {str(e)}")
-
-
-def convert_batch_parallel(input_dir: Path, workers: Optional[int], **kwargs: Any) -> list[dict[str, str]]:
-    """Batch conversion."""
-    import os
-    images = [p for p in input_dir.iterdir() if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS]
-    if not images: return []
-    results: list[dict[str, str]] = []
-    max_workers = workers or os.cpu_count() or 1
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(convert_one, img, **kwargs): img for img in images}
-        for future in as_completed(futures):
-            try:
-                results.append(future.result())
-            except Exception as e:
-                results.append({"input": str(futures[future]), "error": str(e)})
-    return results
-
-
 # Initialize MCP server
 app = Server("image-convert-mcp")
 
 
 @app.list_tools()
 async def list_tools() -> list[Tool]:
+    """List available MCP tools."""
     return [
         Tool(
             name="convert_image_single",
@@ -190,28 +49,94 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "input_path": {"type": "string"},
-                    "output_dir": {"type": "string"},
-                    "format": {"type": "string", "enum": ["webp", "avif", "both"]},
-                    "webp_quality": {"type": "integer", "minimum": 1, "maximum": 100},
-                    "avif_quality": {"type": "integer", "minimum": 1, "maximum": 100},
-                    "lossless": {"type": "boolean"},
-                    "max_width": {"type": "integer"},
-                    "max_height": {"type": "integer"}
+                    "input_path": {
+                        "type": "string",
+                        "description": "Path to the input image file"
+                    },
+                    "output_dir": {
+                        "type": "string",
+                        "description": "Directory for output files (default: same as input)"
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["webp", "avif", "both"],
+                        "description": "Output format (default: both)"
+                    },
+                    "webp_quality": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "description": "WebP quality 1-100 (default: 80)"
+                    },
+                    "avif_quality": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "description": "AVIF quality 1-100 (default: 50)"
+                    },
+                    "lossless": {
+                        "type": "boolean",
+                        "description": "Enable lossless compression for WebP (default: false)"
+                    },
+                    "max_width": {
+                        "type": "integer",
+                        "description": "Maximum output width (maintains aspect ratio)"
+                    },
+                    "max_height": {
+                        "type": "integer",
+                        "description": "Maximum output height (maintains aspect ratio)"
+                    }
                 },
                 "required": ["input_path"]
             }
         ),
         Tool(
             name="convert_image_batch",
-            description="Convert multiple images in a directory",
+            description="Convert multiple images in a directory to WebP and/or AVIF format",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "input_path": {"type": "string"},
-                    "output_dir": {"type": "string"},
-                    "format": {"type": "string", "enum": ["webp", "avif", "both"]},
-                    "workers": {"type": "integer"}
+                    "input_path": {
+                        "type": "string",
+                        "description": "Path to directory containing images"
+                    },
+                    "output_dir": {
+                        "type": "string",
+                        "description": "Directory for output files (default: same as input)"
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["webp", "avif", "both"],
+                        "description": "Output format (default: both)"
+                    },
+                    "webp_quality": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "description": "WebP quality 1-100 (default: 80)"
+                    },
+                    "avif_quality": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "description": "AVIF quality 1-100 (default: 50)"
+                    },
+                    "lossless": {
+                        "type": "boolean",
+                        "description": "Enable lossless compression for WebP (default: false)"
+                    },
+                    "max_width": {
+                        "type": "integer",
+                        "description": "Maximum output width (maintains aspect ratio)"
+                    },
+                    "max_height": {
+                        "type": "integer",
+                        "description": "Maximum output height (maintains aspect ratio)"
+                    },
+                    "workers": {
+                        "type": "integer",
+                        "description": "Number of parallel workers (default: CPU count)"
+                    }
                 },
                 "required": ["input_path"]
             }
@@ -221,13 +146,18 @@ async def list_tools() -> list[Tool]:
 
 @app.call_tool()
 async def call_tool(name: str, arguments: Any) -> list[TextContent]:
+    """Handle MCP tool calls."""
     try:
+        # Validate parameters
         validate_params(arguments)
+        
+        # Validate and resolve paths
         input_path = validate_path(Path(arguments["input_path"]), must_exist=True)
         output_dir = Path(arguments.get("output_dir", input_path.parent))
         output_dir = validate_path(output_dir, must_exist=False)
         output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Common conversion arguments
         common_args = {
             "output_dir": output_dir,
             "format": arguments.get("format", "both"),
@@ -239,42 +169,99 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
         }
 
         if name == "convert_image_batch":
-            if not input_path.is_dir(): raise ValidationError("Batch mode requires directory")
-            result = await asyncio.to_thread(convert_batch_parallel, input_dir=input_path, workers=arguments.get("workers"), **common_args)
-            return [TextContent(type="text", text=f"Batch conversion complete: {result}")]
+            if not input_path.is_dir():
+                raise ValidationError("Batch mode requires a directory path")
+            
+            result = await asyncio.to_thread(
+                convert_batch_parallel,
+                input_dir=input_path,
+                workers=arguments.get("workers"),
+                **common_args
+            )
+            return [TextContent(
+                type="text",
+                text=f"✅ Batch conversion complete: {len(result)} images processed\n{result}"
+            )]
+            
         elif name == "convert_image_single":
-            if not input_path.is_file(): raise ValidationError("Single mode requires file")
-            result = await asyncio.to_thread(convert_one, image_path=input_path, **common_args)
-            return [TextContent(type="text", text=f"Image conversion successful: {result}")]
+            if not input_path.is_file():
+                raise ValidationError("Single mode requires a file path")
+            
+            result = await asyncio.to_thread(
+                convert_one,
+                image_path=input_path,
+                **common_args
+            )
+            return [TextContent(
+                type="text",
+                text=f"✅ Image conversion successful:\n{result}"
+            )]
+            
         raise ValueError(f"Unknown tool: {name}")
-    except Exception as e:
+        
+    except (ValidationError, ValueError) as e:
+        logger.error(f"Tool error: {e}")
         return [TextContent(type="text", text=f"❌ Error: {str(e)}")]
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}", exc_info=True)
+        return [TextContent(type="text", text=f"❌ Unexpected error: {str(e)}")]
 
 
 async def run_stdio():
+    """Run MCP server with stdio transport."""
     async with stdio_server() as (r, w):
         await app.run(r, w, app.create_initialization_options())
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--transport", choices=["stdio", "sse"], default="stdio")
-    parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=8000)
+    """Main entry point for MCP server."""
+    parser = argparse.ArgumentParser(
+        description="Image Convert MCP Server"
+    )
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse"],
+        default="stdio",
+        help="Transport mode (default: stdio)"
+    )
+    parser.add_argument(
+        "--host",
+        default="0.0.0.0",
+        help="Host to bind to for SSE transport (default: 0.0.0.0)"
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8000,
+        help="Port to bind to for SSE transport (default: 8000)"
+    )
     args = parser.parse_args()
 
     if args.transport == "stdio":
+        logger.info("Starting MCP server with stdio transport")
         asyncio.run(run_stdio())
     else:
+        logger.info(f"Starting MCP server with SSE transport on {args.host}:{args.port}")
+        
         # Use SseServerTransport with custom endpoint /mcp
         sse = SseServerTransport(endpoint="/mcp")
 
         async def handle_mcp(request):
-            async with sse.connect_sse(request.scope, request.receive, request._send) as (r, w):
+            """Handle SSE connection at /mcp endpoint."""
+            async with sse.connect_sse(
+                request.scope,
+                request.receive,
+                request._send
+            ) as (r, w):
                 await app.run(r, w, app.create_initialization_options())
 
         async def handle_messages(request):
-            await sse.handle_post_message(request.scope, request.receive, request._send)
+            """Handle POST messages at /messages endpoint."""
+            await sse.handle_post_message(
+                request.scope,
+                request.receive,
+                request._send
+            )
 
         starlette_app = Starlette(
             routes=[
@@ -282,6 +269,7 @@ def main():
                 Route("/messages", endpoint=handle_messages, methods=["POST"]),
             ]
         )
+        
         uvicorn.run(starlette_app, host=args.host, port=args.port)
 
 
