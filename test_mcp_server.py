@@ -11,11 +11,7 @@ from PIL import Image
 import tempfile
 import shutil
 
-# Import functions from mcp_server
-import sys
-sys.path.insert(0, str(Path(__file__).parent))
-
-from mcp_server import (
+from api.index import (
     load_image,
     resize_if_needed,
     convert_one,
