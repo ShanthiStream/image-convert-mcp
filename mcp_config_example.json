@@ -1,0 +1,12 @@
+{
+    "mcpServers": {
+        "image-convert": {
+            "command": "python",
+            "args": [
+                "/path/to/image-convert-mcp/mcp_server.py"
+            ],
+            "disabled": false,
+            "description": "Image format conversion (WebP/AVIF)"
+        }
+    }
+}
