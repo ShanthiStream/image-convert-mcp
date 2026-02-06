@@ -42,7 +42,27 @@ docker build -t image-convert-mcp .
 
 ## 📖 Usage
 
-The MCP server implements the Model Context Protocol with two tools for image conversion.
+The MCP server implements the Model Context Protocol with support for both Stdio and Unified HTTP transports.
+
+## 🚌 Transport Modes
+
+The server supports two transport mechanisms:
+
+### 1. Stdio (Default)
+Standard communication via stdin/stdout. Ideal for local use with MCP clients like Claude Desktop.
+
+```bash
+python mcp_server.py --transport stdio
+```
+
+### 2. HTTP (Unified)
+Web-based communication via HTTP. This is the modern, recommended transport for remote MCP access.
+
+```bash
+python mcp_server.py --transport http --host 0.0.0.0 --port 8000
+```
+
+When running in HTTP mode, the server provides a unified MCP endpoint at the root path (e.g., `http://localhost:8000/`).
 
 ### MCP Tools
 

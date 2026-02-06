@@ -13,9 +13,11 @@ authors = [
     {name = "Dinesh Puthiyedath"}
 ]
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp[sse]>=1.0.0",
     "pillow>=10.0.0",
     "pillow-avif-plugin>=1.4.0",
+    "starlette",
+    "uvicorn",
 ]
 
 [project.optional-dependencies]

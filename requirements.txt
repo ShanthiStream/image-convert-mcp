@@ -1,4 +1,7 @@
-mcp>=1.0.0
+mcp[sse]>=1.0.0
 pillow>=10.0.0
 pillow-avif-plugin>=1.4.0
+starlette
+uvicorn
+sse-starlette
 pytest>=7.0.0
