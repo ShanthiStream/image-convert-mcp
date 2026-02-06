@@ -7,13 +7,13 @@ with support for both single file and batch directory processing.
 
 import asyncio
 import logging
+import argparse
 from pathlib import Path
 from typing import Any, Optional
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from PIL import Image
 import pillow_avif  # noqa: F401
 
-import argparse
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.server.sse import SseServerTransport
@@ -58,6 +58,8 @@ def validate_path(path: Path, must_exist: bool = True) -> Path:
 
 def validate_file_size(path: Path, max_size_mb: int = MAX_FILE_SIZE_MB) -> None:
     """Validate file size."""
+    if not path.exists():
+        return
     file_size_mb = path.stat().st_size / (1024 * 1024)
     if file_size_mb > max_size_mb:
         raise ValidationError(
@@ -83,14 +85,18 @@ def validate_params(arguments: dict[str, Any]) -> None:
     if format_type not in ("webp", "avif", "both"):
         raise ValidationError(f"Invalid format: {format_type}")
         
-    webp_quality = arguments.get("webp_quality", 80)
-    avif_quality = arguments.get("avif_quality", 50)
+    try:
+        webp_quality = int(arguments.get("webp_quality", 80))
+        avif_quality = int(arguments.get("avif_quality", 50))
+    except (ValueError, TypeError):
+        raise ValidationError("Quality must be an integer")
     
     if not 1 <= webp_quality <= 100:
         raise ValidationError(f"webp_quality must be 1-100, got {webp_quality}")
     if not 1 <= avif_quality <= 100:
         raise ValidationError(f"avif_quality must be 1-100, got {avif_quality}")
     
+    # Mode validation
     mode = arguments.get("mode")
     if mode and mode not in ("single", "batch"):
         raise ValidationError(f"Invalid mode: {mode}")
@@ -178,10 +184,10 @@ def convert_batch_parallel(input_dir: Path, workers: Optional[int], **kwargs: An
 
 
 # Initialize MCP server
-app = Server("image-convert-mcp")
+mcp_app = Server("image-convert-mcp")
 
 
-@app.list_tools()
+@mcp_app.list_tools()
 async def list_tools() -> list[Tool]:
     return [
         Tool(
@@ -219,7 +225,7 @@ async def list_tools() -> list[Tool]:
     ]
 
 
-@app.call_tool()
+@mcp_app.call_tool()
 async def call_tool(name: str, arguments: Any) -> list[TextContent]:
     try:
         validate_params(arguments)
@@ -231,9 +237,9 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
         common_args = {
             "output_dir": output_dir,
             "format": arguments.get("format", "both"),
-            "webp_quality": arguments.get("webp_quality", 80),
-            "avif_quality": arguments.get("avif_quality", 50),
-            "lossless": arguments.get("lossless", False),
+            "webp_quality": int(arguments.get("webp_quality", 80)),
+            "avif_quality": int(arguments.get("avif_quality", 50)),
+            "lossless": bool(arguments.get("lossless", False)),
             "max_width": arguments.get("max_width"),
             "max_height": arguments.get("max_height"),
         }
@@ -251,9 +257,31 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
         return [TextContent(type="text", text=f"❌ Error: {str(e)}")]
 
 
+# --- Web Server Setup (for SSE/Vercel) ---
+
+sse = SseServerTransport(endpoint="/mcp")
+
+async def handle_mcp(request):
+    async with sse.connect_sse(request.scope, request.receive, request._send) as (r, w):
+        await mcp_app.run(r, w, mcp_app.create_initialization_options())
+
+async def handle_messages(request):
+    await sse.handle_post_message(request.scope, request.receive, request._send)
+
+# Global app for Vercel/Starlette
+app = Starlette(
+    routes=[
+        Route("/mcp", endpoint=handle_mcp, methods=["GET"]),
+        Route("/messages", endpoint=handle_messages, methods=["POST"]),
+    ]
+)
+
+# Alias for compatibility if needed
+handler = app
+
 async def run_stdio():
     async with stdio_server() as (r, w):
-        await app.run(r, w, app.create_initialization_options())
+        await mcp_app.run(r, w, mcp_app.create_initialization_options())
 
 
 def main():
@@ -266,23 +294,8 @@ def main():
     if args.transport == "stdio":
         asyncio.run(run_stdio())
     else:
-        # Use SseServerTransport with custom endpoint /mcp
-        sse = SseServerTransport(endpoint="/mcp")
-
-        async def handle_mcp(request):
-            async with sse.connect_sse(request.scope, request.receive, request._send) as (r, w):
-                await app.run(r, w, app.create_initialization_options())
-
-        async def handle_messages(request):
-            await sse.handle_post_message(request.scope, request.receive, request._send)
-
-        starlette_app = Starlette(
-            routes=[
-                Route("/mcp", endpoint=handle_mcp, methods=["GET"]),
-                Route("/messages", endpoint=handle_messages, methods=["POST"]),
-            ]
-        )
-        uvicorn.run(starlette_app, host=args.host, port=args.port)
+        logger.info(f"Starting SSE server on {args.host}:{args.port}...")
+        uvicorn.run(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":
