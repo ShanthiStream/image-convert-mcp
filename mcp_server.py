@@ -5,15 +5,17 @@ A Model Context Protocol server for converting images to WebP and AVIF formats
 with support for both single file and batch directory processing.
 """
 
-import sys
-import json
-import os
+import asyncio
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Any
+from typing import Any, Optional
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from PIL import Image
 import pillow_avif  # noqa: F401
+
+from mcp.server import Server
+from mcp.server.stdio import stdio_server
+from mcp.types import Tool, TextContent
 
 # Configuration
 SUPPORTED_EXTS = {".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".webp"}
@@ -24,7 +26,6 @@ MAX_DIMENSION = 10000  # Maximum width or height
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stderr)]
 )
 logger = logging.getLogger(__name__)
 
@@ -165,7 +166,7 @@ def convert_one(
     lossless: bool,
     max_width: Optional[int],
     max_height: Optional[int],
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """
     Convert a single image to WebP and/or AVIF format.
     
@@ -189,7 +190,7 @@ def convert_one(
         img = load_image(image_path)
         img = resize_if_needed(img, max_width, max_height)
 
-        results: Dict[str, str] = {"input": str(image_path)}
+        results: dict[str, str] = {"input": str(image_path)}
         name = image_path.stem
 
         if format in ("webp", "both"):
@@ -228,7 +229,7 @@ def convert_batch_parallel(
     input_dir: Path,
     workers: Optional[int],
     **kwargs: Any,
-) -> List[Dict[str, str]]:
+) -> list[dict[str, str]]:
     """
     Convert multiple images in parallel from a directory.
     
@@ -240,6 +241,8 @@ def convert_batch_parallel(
     Returns:
         List of result dictionaries (one per image)
     """
+    import os
+    
     images = [
         p for p in input_dir.iterdir()
         if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS
@@ -251,7 +254,7 @@ def convert_batch_parallel(
         logger.warning(f"No supported images found in {input_dir}")
         return []
 
-    results: List[Dict[str, str]] = []
+    results: list[dict[str, str]] = []
     max_workers = workers or os.cpu_count() or 1
     
     logger.info(f"Starting batch conversion with {max_workers} workers")
@@ -284,122 +287,225 @@ def convert_batch_parallel(
     return results
 
 
-def validate_params(params: Dict[str, Any]) -> None:
-    """
-    Validate input parameters.
-    
-    Args:
-        params: Parameter dictionary
-        
-    Raises:
-        ValidationError: If parameters are invalid
-    """
-    if "input_path" not in params:
-        raise ValidationError("Missing required parameter: input_path")
-    
-    mode = params.get("mode", "single")
-    if mode not in ("single", "batch"):
-        raise ValidationError(f"Invalid mode: {mode} (must be 'single' or 'batch')")
-    
-    format_type = params.get("format", "both")
-    if format_type not in ("webp", "avif", "both"):
-        raise ValidationError(
-            f"Invalid format: {format_type} (must be 'webp', 'avif', or 'both')"
+# Initialize MCP server
+app = Server("image-convert-mcp")
+
+
+@app.list_tools()
+async def list_tools() -> list[Tool]:
+    """List available image conversion tools."""
+    return [
+        Tool(
+            name="convert_image_single",
+            description="Convert a single image to WebP and/or AVIF format",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "input_path": {
+                        "type": "string",
+                        "description": "Path to the input image file"
+                    },
+                    "output_dir": {
+                        "type": "string",
+                        "description": "Directory for output files (default: same as input)"
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["webp", "avif", "both"],
+                        "default": "both",
+                        "description": "Output format"
+                    },
+                    "webp_quality": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 80,
+                        "description": "WebP quality (1-100)"
+                    },
+                    "avif_quality": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 50,
+                        "description": "AVIF quality (1-100)"
+                    },
+                    "lossless": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Enable lossless compression for WebP"
+                    },
+                    "max_width": {
+                        "type": "integer",
+                        "description": "Maximum output width (maintains aspect ratio)"
+                    },
+                    "max_height": {
+                        "type": "integer",
+                        "description": "Maximum output height (maintains aspect ratio)"
+                    }
+                },
+                "required": ["input_path"]
+            }
+        ),
+        Tool(
+            name="convert_image_batch",
+            description="Convert multiple images in a directory to WebP and/or AVIF format",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "input_path": {
+                        "type": "string",
+                        "description": "Path to directory containing images"
+                    },
+                    "output_dir": {
+                        "type": "string",
+                        "description": "Directory for output files (default: same as input)"
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["webp", "avif", "both"],
+                        "default": "both",
+                        "description": "Output format"
+                    },
+                    "webp_quality": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 80,
+                        "description": "WebP quality (1-100)"
+                    },
+                    "avif_quality": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 50,
+                        "description": "AVIF quality (1-100)"
+                    },
+                    "lossless": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Enable lossless compression for WebP"
+                    },
+                    "max_width": {
+                        "type": "integer",
+                        "description": "Maximum output width (maintains aspect ratio)"
+                    },
+                    "max_height": {
+                        "type": "integer",
+                        "description": "Maximum output height (maintains aspect ratio)"
+                    },
+                    "workers": {
+                        "type": "integer",
+                        "description": "Number of parallel workers (default: CPU count)"
+                    }
+                },
+                "required": ["input_path"]
+            }
         )
-    
-    # Validate quality settings
-    webp_quality = params.get("webp_quality", 80)
-    if not 1 <= webp_quality <= 100:
-        raise ValidationError(f"webp_quality must be 1-100, got {webp_quality}")
-    
-    avif_quality = params.get("avif_quality", 50)
-    if not 1 <= avif_quality <= 100:
-        raise ValidationError(f"avif_quality must be 1-100, got {avif_quality}")
+    ]
 
 
-def main() -> None:
-    """Main entry point for MCP server."""
+@app.call_tool()
+async def call_tool(name: str, arguments: Any) -> list[TextContent]:
+    """Handle tool calls for image conversion."""
     try:
-        request = json.loads(sys.stdin.read())
-        params = request.get("params", {})
-        
-        logger.info("Received conversion request")
-        
-        # Validate parameters
-        validate_params(params)
-
-        mode = params.get("mode", "single")
-        format_type = params.get("format", "both")
-
-        # Validate and resolve paths
-        input_path = validate_path(Path(params["input_path"]), must_exist=True)
-        output_dir = Path(params.get("output_dir", input_path.parent))
+        # Extract and validate parameters
+        input_path = validate_path(Path(arguments["input_path"]), must_exist=True)
+        output_dir = Path(arguments.get("output_dir", input_path.parent))
         output_dir = validate_path(output_dir, must_exist=False)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        common_args = dict(
-            output_dir=output_dir,
-            format=format_type,
-            webp_quality=params.get("webp_quality", 80),
-            avif_quality=params.get("avif_quality", 50),
-            lossless=params.get("lossless", False),
-            max_width=params.get("max_width"),
-            max_height=params.get("max_height"),
-        )
+        format_type = arguments.get("format", "both")
+        webp_quality = arguments.get("webp_quality", 80)
+        avif_quality = arguments.get("avif_quality", 50)
+        lossless = arguments.get("lossless", False)
+        max_width = arguments.get("max_width")
+        max_height = arguments.get("max_height")
 
-        if mode == "batch":
+        # Validate quality settings
+        if not 1 <= webp_quality <= 100:
+            raise ValidationError(f"webp_quality must be 1-100, got {webp_quality}")
+        if not 1 <= avif_quality <= 100:
+            raise ValidationError(f"avif_quality must be 1-100, got {avif_quality}")
+
+        common_args = {
+            "output_dir": output_dir,
+            "format": format_type,
+            "webp_quality": webp_quality,
+            "avif_quality": avif_quality,
+            "lossless": lossless,
+            "max_width": max_width,
+            "max_height": max_height,
+        }
+
+        # Route to appropriate handler
+        if name == "convert_image_batch":
             if not input_path.is_dir():
                 raise ValidationError("Batch mode requires a directory as input_path")
-
-            result = convert_batch_parallel(
+            
+            workers = arguments.get("workers")
+            result = await asyncio.to_thread(
+                convert_batch_parallel,
                 input_dir=input_path,
-                workers=params.get("workers"),
+                workers=workers,
                 **common_args,
             )
-        else:
+            
+            # Format batch results
+            success_count = sum(1 for r in result if "error" not in r)
+            error_count = len(result) - success_count
+            
+            response = f"Batch conversion complete!\n"
+            response += f"✅ Successfully converted: {success_count} images\n"
+            if error_count > 0:
+                response += f"❌ Failed: {error_count} images\n"
+            response += f"\nResults:\n{result}"
+            
+        elif name == "convert_image_single":
             if not input_path.is_file():
                 raise ValidationError("Single mode requires a file as input_path")
-
-            result = convert_one(
+            
+            result = await asyncio.to_thread(
+                convert_one,
                 image_path=input_path,
                 **common_args,
             )
+            
+            response = f"✅ Image conversion successful!\n\n"
+            response += f"Input: {result['input']}\n"
+            if "webp" in result:
+                response += f"WebP: {result['webp']}\n"
+            if "avif" in result:
+                response += f"AVIF: {result['avif']}\n"
+        else:
+            raise ValueError(f"Unknown tool: {name}")
 
-        # Return success response
-        response = {"status": "success", "result": result}
-        print(json.dumps(response))
-        logger.info("Conversion completed successfully")
-        
+        return [TextContent(type="text", text=response)]
+
     except ValidationError as e:
-        error_response = {
-            "status": "error",
-            "error_type": "validation_error",
-            "error": str(e)
-        }
-        print(json.dumps(error_response))
-        logger.error(f"Validation error: {e}")
-        sys.exit(1)
-        
+        error_msg = f"❌ Validation Error: {str(e)}"
+        logger.error(error_msg)
+        return [TextContent(type="text", text=error_msg)]
+    
     except ImageConversionError as e:
-        error_response = {
-            "status": "error",
-            "error_type": "conversion_error",
-            "error": str(e)
-        }
-        print(json.dumps(error_response))
-        logger.error(f"Conversion error: {e}")
-        sys.exit(1)
-        
+        error_msg = f"❌ Conversion Error: {str(e)}"
+        logger.error(error_msg)
+        return [TextContent(type="text", text=error_msg)]
+    
     except Exception as e:
-        error_response = {
-            "status": "error",
-            "error_type": "unexpected_error",
-            "error": str(e)
-        }
-        print(json.dumps(error_response))
-        logger.exception("Unexpected error occurred")
-        sys.exit(1)
+        error_msg = f"❌ Unexpected Error: {str(e)}"
+        logger.exception("Unexpected error in tool call")
+        return [TextContent(type="text", text=error_msg)]
+
+
+async def main():
+    """Run the MCP server using stdio transport."""
+    async with stdio_server() as (read_stream, write_stream):
+        await app.run(
+            read_stream,
+            write_stream,
+            app.create_initialization_options()
+        )
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

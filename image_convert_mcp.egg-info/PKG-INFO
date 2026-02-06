@@ -1,3 +1,17 @@
+Metadata-Version: 2.4
+Name: image-convert-mcp
+Version: 0.2.0
+Summary: A Model Context Protocol server for image format conversion
+Author: Dinesh Puthiyedath
+License: MIT
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: mcp>=1.0.0
+Requires-Dist: pillow>=10.0.0
+Requires-Dist: pillow-avif-plugin>=1.4.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+
 # Image Convert MCP Server
 
 A Model Context Protocol (MCP) server for high-performance image format conversion supporting WebP and AVIF formats with parallel processing capabilities.
@@ -14,7 +28,6 @@ A Model Context Protocol (MCP) server for high-performance image format conversi
 ## 📋 Requirements
 
 - Python 3.11+
-- MCP Python SDK (`mcp>=1.0.0`)
 - Pillow (PIL)
 - pillow-avif-plugin
 - libavif-dev (system dependency)
@@ -24,14 +37,7 @@ A Model Context Protocol (MCP) server for high-performance image format conversi
 ### Using pip
 
 ```bash
-cd /path/to/image-convert-mcp
-pip install -e .
-```
-
-Or install requirements directly:
-
-```bash
-pip install -r requirements.txt
+pip install pillow pillow-avif-plugin
 ```
 
 ### Using Docker
@@ -42,36 +48,40 @@ docker build -t image-convert-mcp .
 
 ## 📖 Usage
 
-The MCP server implements the Model Context Protocol with two tools for image conversion.
+The MCP server accepts JSON input via stdin and outputs JSON results via stdout.
 
-### MCP Tools
+### Single Image Conversion
 
-#### `convert_image_single`
-Convert a single image to WebP and/or AVIF format.
+```json
+{
+  "params": {
+    "mode": "single",
+    "input_path": "/path/to/image.png",
+    "output_dir": "/path/to/output",
+    "format": "both",
+    "webp_quality": 80,
+    "avif_quality": 50,
+    "lossless": false,
+    "max_width": 1920,
+    "max_height": 1080
+  }
+}
+```
 
-**Parameters:**
-- `input_path` (required): Path to the input image file
-- `output_dir` (optional): Directory for output files (default: same as input)
-- `format` (optional): Output format - "webp", "avif", or "both" (default: "both")
-- `webp_quality` (optional): WebP quality 1-100 (default: 80)
-- `avif_quality` (optional): AVIF quality 1-100 (default: 50)
-- `lossless` (optional): Enable lossless WebP compression (default: false)
-- `max_width` (optional): Maximum output width
-- `max_height` (optional): Maximum output height
+### Batch Conversion
 
-#### `convert_image_batch`
-Convert multiple images in a directory to WebP and/or AVIF format.
-
-**Parameters:**
-- `input_path` (required): Path to directory containing images
-- `output_dir` (optional): Directory for output files (default: same as input)
-- `format` (optional): Output format - "webp", "avif", or "both" (default: "both")
-- `webp_quality` (optional): WebP quality 1-100 (default: 80)
-- `avif_quality` (optional): AVIF quality 1-100 (default: 50)
-- `lossless` (optional): Enable lossless WebP compression (default: false)
-- `max_width` (optional): Maximum output width
-- `max_height` (optional): Maximum output height
-- `workers` (optional): Number of parallel workers (default: CPU count)
+```json
+{
+  "params": {
+    "mode": "batch",
+    "input_path": "/path/to/images/directory",
+    "output_dir": "/path/to/output",
+    "format": "webp",
+    "webp_quality": 85,
+    "workers": 4
+  }
+}
+```
 
 ## 🔑 Parameters
 
