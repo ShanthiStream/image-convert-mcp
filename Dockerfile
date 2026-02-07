@@ -17,5 +17,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application
 COPY mcp_server.py .
 
-# Use a shell form for CMD to allow environment variable expansion for PORT
-CMD python mcp_server.py --transport sse --host 0.0.0.0 --port ${PORT:-8000}
+# Use exec to ensure proper signal handling while allowing environment variable expansion
+CMD exec python mcp_server.py --transport sse --host 0.0.0.0 --port ${PORT:-8000}
