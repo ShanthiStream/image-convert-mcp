@@ -16,6 +16,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application
 COPY mcp_server.py .
+COPY src/ ./src/
 
-# Use exec to ensure proper signal handling while allowing environment variable expansion
-CMD exec python mcp_server.py --transport sse --host 0.0.0.0 --port ${PORT:-8000}
+# Copy and set up entrypoint script
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
+# Use JSON array form for proper signal handling
+ENTRYPOINT ["./entrypoint.sh"]
