@@ -1,8 +1,6 @@
 """
 Tests for stats module.
 """
-
-import pytest
 from src.stats import (
     format_size,
     calculate_savings,

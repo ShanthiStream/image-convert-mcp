@@ -10,7 +10,6 @@ from PIL import Image
 
 from src import (
     validate_path,
-    validate_file_size,
     validate_image_dimensions,
     validate_params,
     ValidationError,

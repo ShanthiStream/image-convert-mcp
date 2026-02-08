@@ -14,8 +14,8 @@ import sys
 import logging
 from pathlib import Path
 
-from .core import convert_one, convert_batch_parallel, SUPPORTED_EXTS
-from .validation import validate_path, validate_params, ValidationError
+from .core import convert_one, convert_batch_parallel
+from .validation import validate_path, ValidationError
 from .presets import get_preset, list_presets, PRESETS
 from .stats import get_conversion_stats, format_stats_summary
 

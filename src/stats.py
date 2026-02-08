@@ -136,7 +136,7 @@ def format_stats_summary(stats: dict) -> str:
         return f"❌ {stats['error']}"
     
     lines = [
-        f"📊 Compression Statistics",
+        "📊 Compression Statistics",
         f"   Input: {stats['input_size']}",
     ]
     
