@@ -27,6 +27,7 @@ from src import (
     validate_params,
     ValidationError,
 )
+from src.presets import get_preset
 
 # Setup logging
 logging.basicConfig(
@@ -63,6 +64,11 @@ SUPPORTED INPUT: PNG, JPG, JPEG, TIFF, BMP, WebP""",
                     "input_path": {
                         "type": "string",
                         "description": "Path to the input image file"
+                    },
+                    "preset": {
+                        "type": "string",
+                        "enum": ["web", "thumbnail", "social", "hd", "4k", "archive", "lossless", "max-compression"],
+                        "description": "Use a preset configuration. Presets: web (1920px), thumbnail (300x300), social (1200x630), hd (1920x1080), 4k (3840x2160), archive (high quality), lossless, max-compression"
                     },
                     "output_dir": {
                         "type": "string",
@@ -124,6 +130,11 @@ SUPPORTED INPUT: PNG, JPG, JPEG, TIFF, BMP, WebP files in directory""",
                         "type": "string",
                         "description": "Path to directory containing images"
                     },
+                    "preset": {
+                        "type": "string",
+                        "enum": ["web", "thumbnail", "social", "hd", "4k", "archive", "lossless", "max-compression"],
+                        "description": "Use a preset configuration. Presets: web (1920px), thumbnail (300x300), social (1200x630), hd (1920x1080), 4k (3840x2160), archive (high quality), lossless, max-compression"
+                    },
                     "output_dir": {
                         "type": "string",
                         "description": "Directory for output files (default: same as input)"
@@ -181,15 +192,23 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
         output_dir = validate_path(output_dir, must_exist=False)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Common conversion arguments
+        # Apply preset if specified
+        preset_name = arguments.get("preset")
+        if preset_name:
+            preset_config = get_preset(preset_name)
+            logger.info(f"Using preset '{preset_name}': {preset_config}")
+        else:
+            preset_config = {}
+        
+        # Common conversion arguments (preset values are overridden by explicit args)
         common_args = {
             "output_dir": output_dir,
-            "format": arguments.get("format", "both"),
-            "webp_quality": arguments.get("webp_quality", 80),
-            "avif_quality": arguments.get("avif_quality", 50),
-            "lossless": arguments.get("lossless", False),
-            "max_width": arguments.get("max_width"),
-            "max_height": arguments.get("max_height"),
+            "format": arguments.get("format", preset_config.get("format", "both")),
+            "webp_quality": arguments.get("webp_quality", preset_config.get("webp_quality", 80)),
+            "avif_quality": arguments.get("avif_quality", preset_config.get("avif_quality", 50)),
+            "lossless": arguments.get("lossless", preset_config.get("lossless", False)),
+            "max_width": arguments.get("max_width", preset_config.get("max_width")),
+            "max_height": arguments.get("max_height", preset_config.get("max_height")),
         }
 
         if name == "convert_image_batch":
