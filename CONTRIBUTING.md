@@ -6,18 +6,18 @@ Thank you for your interest in contributing! This document provides guidelines f
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/ShanthiStream/image-convert-mcp.git
    cd image-convert-mcp
    ```
 
 2. **Install dependencies**
    ```bash
-   pip install -r requirements.txt
+   pip install -e ".[dev]"
    ```
 
 3. **Run tests**
    ```bash
-   python -m pytest test_mcp_server.py -v
+   python -m pytest tests/ -v
    ```
 
 ## Code Style

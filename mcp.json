@@ -1,0 +1,45 @@
+{
+    "name": "image-convert-mcp",
+    "version": "0.2.0",
+    "description": "High-performance image conversion to WebP and AVIF formats with batch processing and parallel execution",
+    "author": {
+        "name": "Dinesh Puthiyedath"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/ShanthiStream/image-convert-mcp"
+    },
+    "license": "MIT",
+    "keywords": [
+        "mcp",
+        "model-context-protocol",
+        "image-conversion",
+        "webp",
+        "avif",
+        "image-optimization",
+        "batch-processing",
+        "ai-tools"
+    ],
+    "tools": [
+        {
+            "name": "convert_image_single",
+            "description": "Convert a single image to WebP and/or AVIF format with quality control and optional resizing"
+        },
+        {
+            "name": "convert_image_batch",
+            "description": "Convert multiple images in a directory with parallel processing for high-performance batch operations"
+        }
+    ],
+    "transports": [
+        "stdio",
+        "sse"
+    ],
+    "runtime": {
+        "type": "python",
+        "version": ">=3.11"
+    },
+    "funding": {
+        "type": "buy_me_a_coffee",
+        "url": "https://buymeacoffee.com/shanthistream"
+    }
+}

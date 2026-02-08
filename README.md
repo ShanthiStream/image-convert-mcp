@@ -1,5 +1,21 @@
 # Image Convert MCP Server
 
+<p align="center">
+  <a href="https://buymeacoffee.com/shanthistream">
+    <img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee">
+  </a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.11+-blue?style=flat-square&logo=python" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="MIT License">
+  <img src="https://img.shields.io/badge/MCP-Compatible-purple?style=flat-square" alt="MCP Compatible">
+</p>
+
+> 💡 **If this tool saves you time, please consider [buying me a coffee](https://buymeacoffee.com/shanthistream)!** Your support helps maintain and improve this project.
+
+---
+
 A Model Context Protocol (MCP) server for high-performance image format conversion supporting WebP and AVIF formats with parallel processing capabilities.
 
 ## 🚀 Features
@@ -202,6 +218,31 @@ image-convert-mcp/
 ├── requirements.txt   # Python dependencies
 └── Dockerfile         # Docker container definition
 ```
+
+## 🤖 For AI Agents
+
+**Quick Summary:** This MCP server converts images to WebP/AVIF formats for web optimization.
+
+| Task | Tool | Example |
+|------|------|---------|
+| Single image | `convert_image_single` | `{"input_path": "/path/to/image.png", "format": "webp"}` |
+| Batch directory | `convert_image_batch` | `{"input_path": "/path/to/dir/", "workers": 4}` |
+
+📖 See [AGENT_GUIDE.md](AGENT_GUIDE.md) for detailed usage patterns.
+
+## ☕ Support This Project
+
+If this MCP server saves you time or helps your projects, consider supporting its development:
+
+<a href="https://buymeacoffee.com/shanthistream">
+  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" height="50" width="210" alt="Buy Me A Coffee">
+</a>
+
+**Your support enables:**
+- 🚀 New format support (JPEG XL, HEIC)
+- 📊 Progress reporting features
+- 🔒 Security enhancements
+- 📚 Better documentation
 
 ## 📝 License
 

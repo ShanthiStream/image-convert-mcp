@@ -5,12 +5,32 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "image-convert-mcp"
 version = "0.2.0"
-description = "A Model Context Protocol server for image format conversion"
+description = "A Model Context Protocol server for high-performance image conversion to WebP and AVIF formats"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
     {name = "Dinesh Puthiyedath"}
+]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "image-conversion",
+    "webp",
+    "avif",
+    "image-optimization",
+    "ai-tools",
+    "batch-processing"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Graphics :: Graphics Conversion",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
     "mcp[sse]>=1.0.0",
@@ -20,11 +40,23 @@ dependencies = [
     "uvicorn",
 ]
 
+[project.urls]
+Homepage = "https://github.com/ShanthiStream/image-convert-mcp"
+Repository = "https://github.com/ShanthiStream/image-convert-mcp"
+"Bug Tracker" = "https://github.com/ShanthiStream/image-convert-mcp/issues"
+Funding = "https://buymeacoffee.com/shanthistream"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
+    "ruff>=0.1.0",
 ]
 
 [tool.setuptools]
 packages = ["src"]
 py-modules = ["mcp_server"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+

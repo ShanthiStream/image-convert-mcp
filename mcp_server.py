@@ -45,7 +45,18 @@ async def list_tools() -> list[Tool]:
     return [
         Tool(
             name="convert_image_single",
-            description="Convert a single image to WebP and/or AVIF format",
+            description="""Convert a single image to WebP and/or AVIF format.
+
+USE WHEN: Optimizing images for web, reducing file sizes, or converting 
+legacy formats (PNG/JPG/TIFF/BMP) to modern next-gen formats.
+
+COMMON PATTERNS:
+• Web optimization: format='webp', webp_quality=80
+• Maximum compression: format='avif', avif_quality=50
+• Thumbnails: max_width=300, max_height=300
+• Lossless archival: format='webp', lossless=True
+
+SUPPORTED INPUT: PNG, JPG, JPEG, TIFF, BMP, WebP""",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -92,7 +103,20 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="convert_image_batch",
-            description="Convert multiple images in a directory to WebP and/or AVIF format",
+            description="""Convert multiple images in a directory to WebP and/or AVIF format.
+
+USE WHEN: Processing all images in a folder, bulk optimization, or 
+converting entire image libraries at once.
+
+PERFORMANCE TIP: Uses parallel processing. Set workers=4-8 for optimal 
+performance on most systems. Default uses all CPU cores.
+
+COMMON PATTERNS:
+• Batch web optimization: format='webp', webp_quality=80, workers=4
+• Create thumbnail directory: max_width=300, max_height=300
+• Full archive conversion: format='both', workers=8
+
+SUPPORTED INPUT: PNG, JPG, JPEG, TIFF, BMP, WebP files in directory""",
             inputSchema={
                 "type": "object",
                 "properties": {
