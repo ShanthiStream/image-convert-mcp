@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "image-convert-mcp"
-version = "0.2.0"
+version = "0.3.0"
 description = "A Model Context Protocol server for high-performance image conversion to WebP and AVIF formats"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -51,6 +51,9 @@ dev = [
     "pytest>=7.0.0",
     "ruff>=0.1.0",
 ]
+
+[project.scripts]
+image-convert = "src.cli:main"
 
 [tool.setuptools]
 packages = ["src"]

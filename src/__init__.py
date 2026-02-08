@@ -23,6 +23,20 @@ from .validation import (
     MAX_DIMENSION,
 )
 
+from .presets import (
+    get_preset,
+    list_presets,
+    PRESETS,
+    PresetConfig,
+)
+
+from .stats import (
+    get_conversion_stats,
+    format_stats_summary,
+    calculate_savings,
+    format_size,
+)
+
 __all__ = [
     # Core functions
     "load_image",
@@ -41,4 +55,15 @@ __all__ = [
     # Constants
     "MAX_FILE_SIZE_MB",
     "MAX_DIMENSION",
+    # Presets
+    "get_preset",
+    "list_presets",
+    "PRESETS",
+    "PresetConfig",
+    # Stats
+    "get_conversion_stats",
+    "format_stats_summary",
+    "calculate_savings",
+    "format_size",
 ]
+

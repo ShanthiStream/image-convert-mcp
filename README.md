@@ -50,6 +50,43 @@ Or install requirements directly:
 pip install -r requirements.txt
 ```
 
+## 💻 CLI Usage
+
+After installation, you can use the `image-convert` command directly:
+
+```bash
+# Convert to both WebP and AVIF
+image-convert photo.png
+
+# Convert to WebP only
+image-convert photo.png -f webp -q 85
+
+# Use a preset
+image-convert photo.png --preset thumbnail
+
+# Batch convert a directory
+image-convert ./images/ --batch -f webp
+
+# Show compression statistics
+image-convert photo.png -f webp --stats
+
+# List available presets
+image-convert --list-presets
+```
+
+### Available Presets
+
+| Preset | Description |
+|--------|-------------|
+| `web` | Optimized for web (WebP, quality 80, max 1920px) |
+| `thumbnail` | Small thumbnails (WebP, 300x300) |
+| `social` | Social media images (1200x630) |
+| `hd` | HD resolution (1920x1080) |
+| `4k` | 4K resolution (3840x2160) |
+| `archive` | High quality archival (both formats) |
+| `lossless` | Lossless WebP compression |
+| `max-compression` | Maximum file size reduction (AVIF) |
+
 ### Using Docker
 
 ```bash
